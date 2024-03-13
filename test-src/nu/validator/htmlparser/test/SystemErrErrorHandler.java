@@ -58,16 +58,16 @@ public class SystemErrErrorHandler implements ErrorHandler, ErrorListener {
      */
     public void warning(SAXParseException e) throws SAXException {
         try {
-            out.write("Warning:\n");
-            out.write(e.getMessage());
-            out.write("\nFile: ");
             String systemId = e.getSystemId();
+            out.write("file:///");
             out.write((systemId == null) ? "Unknown" : systemId);
-            out.write("\nLine: ");
+            out.write(":");
             out.write(Integer.toString(e.getLineNumber()));
-            out.write(" Col: ");
+            out.write(":");
             out.write(Integer.toString(e.getColumnNumber()));
-            out.write("\n\n");
+            out.write(" warning: ");
+            out.write(e.getMessage());
+            out.write("\n");
             out.flush();
         } catch (IOException e1) {
             throw new SAXException(e1);
@@ -80,16 +80,16 @@ public class SystemErrErrorHandler implements ErrorHandler, ErrorListener {
     public void error(SAXParseException e) throws SAXException {
         inError = true;
         try {
-            out.write("Error:\n");
-            out.write(e.getMessage());
-            out.write("\nFile: ");
+            out.write("file:///");
             String systemId = e.getSystemId();
             out.write((systemId == null) ? "Unknown" : systemId);
-            out.write("\nLine: ");
+            out.write(":");
             out.write(Integer.toString(e.getLineNumber()));
-            out.write(" Col: ");
+            out.write(":");
             out.write(Integer.toString(e.getColumnNumber()));
-            out.write("\n\n");
+            out.write(" error: ");
+            out.write(e.getMessage());
+            out.write("\n");
             out.flush();
         } catch (IOException e1) {
             throw new SAXException(e1);

@@ -65,6 +65,6 @@ public class Html2Dce {
                 return;
         }
 
-        Html2DceParser.analyze(filePath, in, out);
+        Html2DceParser.analyze(filePath.replaceAll("\\\\","/"), in, out);
     }
 }
