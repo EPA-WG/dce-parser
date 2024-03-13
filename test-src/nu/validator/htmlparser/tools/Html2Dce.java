@@ -32,6 +32,7 @@ public class Html2Dce {
 
     /**
      * @param args
+     * @author sashafirsov
      */
         public static void
     main(String[] args)

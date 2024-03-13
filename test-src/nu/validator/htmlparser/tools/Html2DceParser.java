@@ -45,6 +45,7 @@ public class Html2DceParser {
      * @throws MalformedURLException
      * @throws IOException
      * @throws TransformerException
+     * @author sashafirsov
      */
         public static void
     analyze(String filePath, InputStream in, OutputStream out)

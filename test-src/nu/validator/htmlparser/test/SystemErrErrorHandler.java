@@ -102,16 +102,16 @@ public class SystemErrErrorHandler implements ErrorHandler, ErrorListener {
     public void fatalError(SAXParseException e) throws SAXException {
         inError = true;
         try {
-            out.write("Fatal Error:\n");
-            out.write(e.getMessage());
-            out.write("\nFile: ");
+            out.write("file:///");
             String systemId = e.getSystemId();
             out.write((systemId == null) ? "Unknown" : systemId);
-            out.write("\nLine: ");
+            out.write(":");
             out.write(Integer.toString(e.getLineNumber()));
-            out.write(" Col: ");
+            out.write(":");
             out.write(Integer.toString(e.getColumnNumber()));
-            out.write("\n\n");
+            out.write(" Fatal error: ");
+            out.write(e.getMessage());
+            out.write("\n");
             out.flush();
         } catch (IOException e1) {
             throw new SAXException(e1);
