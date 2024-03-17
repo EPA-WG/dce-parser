@@ -200,6 +200,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     final static int IMG = 67;
 
+    final static int DCE = 68;
+
     // start insertion modes
 
     private static final int IN_ROW = 0;
@@ -5328,6 +5330,15 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 appendElement(elt, currentNode);
                 elt = getDocumentFragmentForTemplate(elt);
             }
+        } else if (ElementName.DCE == elementName) {
+            T root = getDeclarativeShadowRoot(currentNode, elt, attributes);
+            if (root != null) {
+                setDocumentFragmentForDce(elt, root);
+                elt = root;
+            } else {
+                appendElement(elt, currentNode);
+                elt = getDocumentFragmentForDce(elt);
+            }
         } else {
             appendElement(elt, currentNode);
         }
@@ -5415,8 +5426,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     T getDocumentFragmentForTemplate(T template) {
         return template;
     }
+    T getDocumentFragmentForDce(T dce) { return dce; }
 
     void setDocumentFragmentForTemplate(T template, T fragment) {
+    }
+    void setDocumentFragmentForDce(T template, T fragment) {
     }
 
     T getShadowRootFromHost(T host, T template, String shadowRootMode,

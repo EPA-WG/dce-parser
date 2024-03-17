@@ -997,6 +997,14 @@ public static final ElementName TEMPLATE = new ElementName("template", "template
 // CPPONLY: NS_NewHTMLTemplateElement,
 // CPPONLY: NS_NewSVGUnknownElement,
 TreeBuilder.TEMPLATE | SPECIAL | SCOPING);
+public static final ElementName DCE = new ElementName("custom-element", "custom-element",
+// CPPONLY: NS_NewHTMLTemplateElement,
+// CPPONLY: NS_NewSVGUnknownElement,
+TreeBuilder.DCE | SPECIAL | SCOPING);
+public static final ElementName CUSTOM_ELEMENT = new ElementName("custom-element", "custom-element",
+// CPPONLY: NS_NewHTMLTemplateElement,
+// CPPONLY: NS_NewSVGUnknownElement,
+TreeBuilder.DCE | SPECIAL | SCOPING);
 public static final ElementName ALTGLYPHDEF = new ElementName("altglyphdef", "altGlyphDef",
 // CPPONLY: NS_NewHTMLUnknownElement,
 // CPPONLY: NS_NewSVGUnknownElement,

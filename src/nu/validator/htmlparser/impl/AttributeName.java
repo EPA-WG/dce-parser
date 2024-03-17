@@ -1073,6 +1073,7 @@ public final class AttributeName
     public static final AttributeName STOP_COLOR = new AttributeName(ALL_NO_NS, "stop-color", "stop-color", "stop-color", "stop-color", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
     public static final AttributeName STOP_OPACITY = new AttributeName(ALL_NO_NS, "stop-opacity", "stop-opacity", "stop-opacity", "stop-opacity", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
     public static final AttributeName TEMPLATE = new AttributeName(ALL_NO_NS, "template", "template", "template", "template", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
+    public static final AttributeName TAG = new AttributeName(ALL_NO_NS, "tag", "tag", "tag", "tag", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
     public static final AttributeName WRAP = new AttributeName(ALL_NO_NS, "wrap", "wrap", "wrap", "wrap", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
     public static final AttributeName ABBR = new AttributeName(ALL_NO_NS, "abbr", "abbr", "abbr", "abbr", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
     public static final AttributeName ATTRIBUTENAME = new AttributeName(ALL_NO_NS, "attributename", "attributename", "attributeName", "attributename", ALL_NO_PREFIX, NCNAME_HTML | NCNAME_FOREIGN | NCNAME_LANG);
@@ -1643,6 +1644,7 @@ public final class AttributeName
     SHAPE,
     STOP_COLOR,
     TEMPLATE,
+    TAG,
     ABBR,
     ATTRIBUTETYPE,
     COORDS,
