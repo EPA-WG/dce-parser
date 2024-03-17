@@ -272,6 +272,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     private static final int IN_TEMPLATE = 22;
 
+    private static final int IN_DCE = 23;
+
     // start charset states
 
     private static final int CHARSET_INITIAL = 0;
@@ -406,6 +408,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
      * Current template mode stack pointer.
      */
     private int templateModePtr = -1;
+
+    /**
+     * Stack of dce insertion modes
+     */
+    private @Auto int[] dceModeStack;
+
+    /**
+     * Current dce mode stack pointer.
+     */
+    private int dceModePtr = -1;
 
     private @Auto StackNode<T>[] stackNodes;
 
@@ -584,10 +596,12 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         stackNodes = new StackNode[64];
         stack = new StackNode[64];
         templateModeStack = new int[64];
+        dceModeStack = new int[64];
         listOfActiveFormattingElements = new StackNode[64];
         needToDropLF = false;
         originalMode = INITIAL;
         templateModePtr = -1;
+        dceModePtr = -1;
         stackNodesIdx = 0;
         numStackNodes = 0;
         currentPtr = -1;
@@ -683,6 +697,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 stack[currentPtr] = node;
                 if ("template" == contextName) {
                     pushTemplateMode(IN_TEMPLATE);
+                }
+                if ("custom-element" == contextName) {
+                    pushDceMode(IN_DCE);
                 }
                 resetTheInsertionMode();
                 formPointer = getFormPointerForContext(contextNode);
@@ -916,6 +933,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                     continue;
                                 case FRAMESET_OK:
                                 case IN_TEMPLATE:
+                                case IN_DCE:
                                 case IN_BODY:
                                 case IN_CELL:
                                 case IN_CAPTION:
@@ -1102,6 +1120,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                     i--;
                                     continue;
                                 case IN_TEMPLATE:
+                                case IN_DCE:
                                 case IN_BODY:
                                 case IN_CELL:
                                 case IN_CAPTION:
@@ -1142,7 +1161,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                      * current token.
                                      */
                                     if (currentPtr == 0 || stack[currentPtr].getGroup() ==
-                                            TreeBuilder.TEMPLATE) {
+                                            TreeBuilder.TEMPLATE || stack[currentPtr].getGroup() ==
+                                            TreeBuilder.DCE) {
                                         errNonSpaceInColgroupInFragment();
                                         start = i + 1;
                                         continue;
@@ -1347,13 +1367,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     }
                     // ]NOCPP]
 
-                    if (isTemplateModeStackEmpty()) {
+                    if (isTemplateModeStackEmpty() && isTemplateModeStackEmpty()) {
                         break eofloop;
                     }
 
                     // fall through to IN_TEMPLATE
                     // CPPONLY: MOZ_FALLTHROUGH;
-                case IN_TEMPLATE:
+                case IN_TEMPLATE: {
                     int eltPos = findLast("template");
                     if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
                         assert fragment;
@@ -1371,6 +1391,28 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
                     // Reprocess token.
                     continue;
+                }
+                    // fall through to IN_DCE
+                    // CPPONLY: MOZ_FALLTHROUGH;
+                case IN_DCE:{
+                    int eltPos = findLast("custom-element");
+                    if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
+                        assert fragment;
+                        break eofloop;
+                    }
+                    if (errorHandler != null) {
+                        errListUnclosedStartTags(0);
+                    }
+                    while (currentPtr >= eltPos) {
+                        pop();
+                    }
+                    clearTheListOfActiveFormattingElementsUpToTheLastMarker();
+                    popDceMode();
+                    resetTheInsertionMode();
+
+                    // Reprocess token.
+                    continue;
+                }
                 case TEXT:
                     // [NOCPP[
                     if (errorHandler != null) {
@@ -1425,6 +1467,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         contextName = null;
         contextNode = null;
         templateModeStack = null;
+        dceModeStack = null;
         if (stack != null) {
             while (currentPtr > -1) {
                 stack[currentPtr].release(this);
@@ -1467,7 +1510,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         if (errorHandler != null) {
             // ID uniqueness
             @IdType String id = attributes.getId();
-            if (id != null && !isTemplateContents()) {
+            if (id != null && !isTemplateContents()&& !isDceContents()) {
                 LocatorImpl oldLoc = idLocations.get(id);
                 if (oldLoc != null) {
                     err("Duplicate ID \u201C" + id + "\u201D.");
@@ -1626,6 +1669,80 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             // Reprocess token.
                             continue;
                     }
+                case IN_DCE:
+                    switch (group) {
+                        case COL:
+                            popDceMode();
+                            pushDceMode(IN_COLUMN_GROUP);
+                            mode = IN_COLUMN_GROUP;
+                            // Reprocess token.
+                            continue;
+                        case CAPTION:
+                        case COLGROUP:
+                        case TBODY_OR_THEAD_OR_TFOOT:
+                            popDceMode();
+                            pushDceMode(IN_TABLE);
+                            mode = IN_TABLE;
+                            // Reprocess token.
+                            continue;
+                        case TR:
+                            popDceMode();
+                            pushDceMode(IN_TABLE_BODY);
+                            mode = IN_TABLE_BODY;
+                            // Reprocess token.
+                            continue;
+                        case TD_OR_TH:
+                            popDceMode();
+                            pushDceMode(IN_ROW);
+                            mode = IN_ROW;
+                            // Reprocess token.
+                            continue;
+                        case META:
+                            checkMetaCharset(attributes);
+                            appendVoidElementToCurrentMayFoster(
+                                    elementName,
+                                    attributes);
+                            selfClosing = false;
+                            // [NOCPP[
+                            voidElement = true;
+                            // ]NOCPP]
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case TITLE:
+                            startTagTitleInHead(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case BASE:
+                        case LINK_OR_BASEFONT_OR_BGSOUND:
+                            appendVoidElementToCurrentMayFoster(
+                                    elementName,
+                                    attributes);
+                            selfClosing = false;
+                            // [NOCPP[
+                            voidElement = true;
+                            // ]NOCPP]
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case SCRIPT:
+                            startTagScriptInHead(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case NOFRAMES:
+                        case STYLE:
+                            startTagGenericRawText(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case DCE:
+                            startTagDceInHead(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
+                        default:
+                            popDceMode();
+                            pushDceMode(IN_BODY);
+                            mode = IN_BODY;
+                            // Reprocess token.
+                            continue;
+                    }
                 case IN_ROW:
                     switch (group) {
                         case TD_OR_TH:
@@ -1644,7 +1761,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TR:
                             eltPos = findLastOrRoot(TreeBuilder.TR);
                             if (eltPos == 0) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errNoTableRowToClose();
                                 break starttagloop;
                             }
@@ -1679,8 +1796,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case COLGROUP:
                         case TBODY_OR_THEAD_OR_TFOOT:
                             eltPos = findLastInTableScopeOrRootTemplateTbodyTheadTfoot();
-                            if (eltPos == 0 || stack[eltPos].getGroup() == TEMPLATE) {
-                                assert fragment || isTemplateContents();
+                            if (eltPos == 0 || stack[eltPos].getGroup() == TEMPLATE || stack[eltPos].getGroup() == DCE) {
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayStartTag(name);
                                 break starttagloop;
                             } else {
@@ -1739,11 +1856,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             case TEMPLATE:
                                 // fall through to IN_HEAD
                                 break intableloop;
+                            case DCE:
+                                // fall through to IN_HEAD
+                                break intableloop;
                             case TABLE:
                                 errTableSeenWhileTableOpen();
                                 eltPos = findLastInTableScope(name);
                                 if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
-                                    assert fragment || isTemplateContents();
+                                    assert fragment || isTemplateContents() || isDceContents();
                                     break starttagloop;
                                 }
                                 generateImpliedEndTags();
@@ -1796,7 +1916,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 attributes = null; // CPP
                                 break starttagloop;
                             case FORM:
-                                if (formPointer != null || isTemplateContents()) {
+                                if (formPointer != null || isTemplateContents() || isDceContents()) {
                                     errFormWhenFormOpen();
                                     break starttagloop;
                                 } else {
@@ -1822,7 +1942,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TD_OR_TH:
                             eltPos = findLastInTableScope("caption");
                             if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayStartTag(name);
                                 break starttagloop;
                             }
@@ -1865,7 +1985,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case FRAMESET:
                             if (mode == FRAMESET_OK) {
                                 if (currentPtr == 0 || stack[1].getGroup() != BODY) {
-                                    assert fragment || isTemplateContents();
+                                    assert fragment || isTemplateContents() || isDceContents();
                                     errStrayStartTag(name);
                                     break starttagloop;
                                 } else {
@@ -1921,7 +2041,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         switch (group) {
                             case HTML:
                                 errStrayStartTag(name);
-                                if (!fragment && !isTemplateContents()) {
+                                if (!fragment && !( isTemplateContents() || isDceContents() ) ){
                                     addAttributesToHtml(attributes);
                                     attributes = null; // CPP
                                 }
@@ -1935,9 +2055,12 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             case TEMPLATE:
                                 // Fall through to IN_HEAD
                                 break inbodyloop;
+                            case DCE:
+                                // Fall through to IN_HEAD
+                                break inbodyloop;
                             case BODY:
-                                if (currentPtr == 0 || stack[1].getGroup() != BODY || isTemplateContents()) {
-                                    assert fragment || isTemplateContents();
+                                if (currentPtr == 0 || stack[1].getGroup() != BODY || isTemplateContents() || isDceContents()) {
+                                    assert fragment || isTemplateContents() || isDceContents();
                                     errStrayStartTag(name);
                                     break starttagloop;
                                 }
@@ -1987,7 +2110,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 attributes = null; // CPP
                                 break starttagloop;
                             case FORM:
-                                if (formPointer != null && !isTemplateContents()) {
+                                if (formPointer != null && !( isTemplateContents() || isDceContents() )) {
                                     errFormWhenFormOpen();
                                     break starttagloop;
                                 } else {
@@ -2337,7 +2460,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         switch (group) {
                             case HTML:
                                 errStrayStartTag(name);
-                                if (!fragment && !isTemplateContents()) {
+                                if (!fragment && !( isTemplateContents() || isDceContents() )) {
                                     addAttributesToHtml(attributes);
                                     attributes = null; // CPP
                                 }
@@ -2395,6 +2518,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 startTagTemplateInHead(elementName, attributes);
                                 attributes = null; // CPP
                                 break starttagloop;
+                            case DCE:
+                                startTagDceInHead(elementName, attributes);
+                                attributes = null; // CPP
+                                break starttagloop;
                             default:
                                 pop();
                                 mode = AFTER_HEAD;
@@ -2408,7 +2535,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             // XXX did Hixie really mean to omit "base"
                             // here?
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents())) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2461,7 +2588,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents())) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2480,9 +2607,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             startTagTemplateInHead(elementName, attributes);
                             attributes = null; // CPP
                             break starttagloop;
+                        case DCE:
+                            startTagDceInHead(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
                         default:
-                            if (currentPtr == 0 || stack[currentPtr].getGroup() == TEMPLATE) {
-                                assert fragment || isTemplateContents();
+                            if (currentPtr == 0 || stack[currentPtr].getGroup() == TEMPLATE || stack[currentPtr].getGroup() == DCE) {
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errGarbageInColgroup();
                                 break starttagloop;
                             }
@@ -2577,6 +2708,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             startTagTemplateInHead(elementName, attributes);
                             attributes = null; // CPP
                             break starttagloop;
+                        case DCE:
+                            startTagDceInHead(elementName, attributes);
+                            attributes = null; // CPP
+                            break starttagloop;
                         case HR:
                             if (isCurrent("option")) {
                                 pop();
@@ -2599,7 +2734,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents() )) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2635,7 +2770,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents() )) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2710,7 +2845,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents() )) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2756,7 +2891,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents() )) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2782,7 +2917,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             mode = IN_FRAMESET;
                             attributes = null; // CPP
                             break starttagloop;
-                        case TEMPLATE:
+                        case TEMPLATE: {
                             errFooBetweenHeadAndBody(name);
                             pushHeadPointerOntoStack();
                             StackNode<T> headOnStack = stack[currentPtr];
@@ -2790,6 +2925,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             removeFromStack(headOnStack);
                             attributes = null; // CPP
                             break starttagloop;
+                        }
+                        case DCE:{
+                            errFooBetweenHeadAndBody(name);
+                            pushHeadPointerOntoStack();
+                            StackNode<T> headOnStack = stack[currentPtr];
+                            startTagDceInHead(elementName, attributes);
+                            removeFromStack(headOnStack);
+                            attributes = null; // CPP
+                            break starttagloop;
+                        }
                         case BASE:
                         case LINK_OR_BASEFONT_OR_BGSOUND:
                             errFooBetweenHeadAndBody(name);
@@ -2867,7 +3012,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents() ) ) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2882,7 +3027,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case HTML:
                             errStrayStartTag(name);
-                            if (!fragment && !isTemplateContents()) {
+                            if (!fragment && !( isTemplateContents() || isDceContents())) {
                                 addAttributesToHtml(attributes);
                                 attributes = null; // CPP
                             }
@@ -2947,12 +3092,29 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         pushTemplateMode(IN_TEMPLATE);
     }
 
+    private void startTagDceInHead(ElementName elementName, HtmlAttributes attributes) throws SAXException {
+        appendToCurrentNodeAndPushElement(elementName, attributes);
+        insertMarker();
+        framesetOk = false;
+        originalMode = mode;
+        mode = IN_DCE;
+        pushDceMode(IN_DCE);
+    }
+
     private boolean isTemplateContents() {
         return TreeBuilder.NOT_FOUND_ON_STACK != findLast("template");
     }
 
+    private boolean isDceContents() {
+        return TreeBuilder.NOT_FOUND_ON_STACK != findLast("custom-element");
+    }
+
     private boolean isTemplateModeStackEmpty() {
         return templateModePtr == -1;
+    }
+
+    private boolean isDceModeStackEmpty() {
+        return dceModePtr == -1;
     }
 
     private boolean isSpecialParentInForeign(StackNode<T> stackNode) {
@@ -3229,7 +3391,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TR:
                             eltPos = findLastOrRoot(TreeBuilder.TR);
                             if (eltPos == 0) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errNoTableRowToClose();
                                 break endtagloop;
                             }
@@ -3240,7 +3402,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TABLE:
                             eltPos = findLastOrRoot(TreeBuilder.TR);
                             if (eltPos == 0) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errNoTableRowToClose();
                                 break endtagloop;
                             }
@@ -3255,7 +3417,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             }
                             eltPos = findLastOrRoot(TreeBuilder.TR);
                             if (eltPos == 0) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errNoTableRowToClose();
                                 break endtagloop;
                             }
@@ -3289,8 +3451,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             break endtagloop;
                         case TABLE:
                             eltPos = findLastInTableScopeOrRootTemplateTbodyTheadTfoot();
-                            if (eltPos == 0 || stack[eltPos].getGroup() == TEMPLATE) {
-                                assert fragment || isTemplateContents();
+                            if (eltPos == 0 || stack[eltPos].getGroup() == TEMPLATE || stack[eltPos].getGroup() == DCE) {
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3316,7 +3478,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TABLE:
                             eltPos = findLast("table");
                             if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3364,7 +3526,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             eltPos = findLastInTableScope("caption");
 
                             if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3413,7 +3575,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TBODY_OR_THEAD_OR_TFOOT:
                         case TR:
                             if (findLastInTableScope(name) == TreeBuilder.NOT_FOUND_ON_STACK) {
-                                assert name == "tbody" || name == "tfoot" || name == "thead" || fragment || isTemplateContents();
+                                assert name == "tbody" || name == "tfoot" || name == "thead" || fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3435,7 +3597,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     switch (group) {
                         case BODY:
                             if (!isSecondOnStackBody()) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3463,7 +3625,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             break endtagloop;
                         case HTML:
                             if (!isSecondOnStackBody()) {
-                                assert fragment || isTemplateContents();
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errStrayEndTag(name);
                                 break endtagloop;
                             }
@@ -3508,7 +3670,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             }
                             break endtagloop;
                         case FORM:
-                            if (!isTemplateContents()) {
+                            if (!(isTemplateContents() || isDceContents())) {
                                 if (formPointer == null) {
                                     errStrayEndTag(name);
                                     break endtagloop;
@@ -3719,6 +3881,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TEMPLATE:
                             endTagTemplateInHead();
                             break endtagloop;
+                        case DCE:
+                            endTagDceInHead();
+                            break endtagloop;
                         default:
                             errStrayEndTag(name);
                             break endtagloop;
@@ -3741,9 +3906,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 case IN_COLUMN_GROUP:
                     switch (group) {
                         case COLGROUP:
-                            if (currentPtr == 0 || stack[currentPtr].getGroup() ==
-                                    TreeBuilder.TEMPLATE) {
-                                assert fragment || isTemplateContents();
+                            if (currentPtr == 0 || stack[currentPtr].getGroup() == TreeBuilder.TEMPLATE || stack[currentPtr].getGroup() == TreeBuilder.DCE) {
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errGarbageInColgroup();
                                 break endtagloop;
                             }
@@ -3756,10 +3920,12 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TEMPLATE:
                             endTagTemplateInHead();
                             break endtagloop;
+                        case DCE:
+                            endTagDceInHead();
+                            break endtagloop;
                         default:
-                            if (currentPtr == 0 || stack[currentPtr].getGroup() ==
-                                    TreeBuilder.TEMPLATE) {
-                                assert fragment || isTemplateContents();
+                            if (currentPtr == 0 || stack[currentPtr].getGroup() ==TreeBuilder.TEMPLATE || stack[currentPtr].getGroup() ==TreeBuilder.DCE) {
+                                assert fragment || isTemplateContents() || isDceContents();
                                 errGarbageInColgroup();
                                 break endtagloop;
                             }
@@ -3828,6 +3994,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             break endtagloop;
                         case TEMPLATE:
                             endTagTemplateInHead();
+                            break endtagloop;
+                        case DCE:
+                            endTagDceInHead();
                             break endtagloop;
                         default:
                             errStrayEndTag(name);
@@ -3933,6 +4102,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case TEMPLATE:
                             endTagTemplateInHead();
                             break endtagloop;
+                        case DCE:
+                            endTagDceInHead();
+                            break endtagloop;
                         case HTML:
                         case BODY:
                         case BR:
@@ -3980,11 +4152,29 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         resetTheInsertionMode();
     }
 
+    private void endTagDceInHead() throws SAXException {
+        int eltPos = findLast("custom-element");
+        if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
+            errStrayEndTag("custom-element");
+            return;
+        }
+        generateImpliedEndTagsThoroughly();
+        if (errorHandler != null && !isCurrent("custom-element")) {
+            errUnclosedElements(eltPos, "custom-element");
+        }
+        while (currentPtr >= eltPos) {
+            pop();
+        }
+        clearTheListOfActiveFormattingElementsUpToTheLastMarker();
+        popDceMode();
+        resetTheInsertionMode();
+    }
+
     private int findLastInTableScopeOrRootTemplateTbodyTheadTfoot() {
         for (int i = currentPtr; i > 0; i--) {
             if (stack[i].ns == "http://www.w3.org/1999/xhtml"
                     && (stack[i].getGroup() == TreeBuilder.TBODY_OR_THEAD_OR_TFOOT
-                            || stack[i].getGroup() == TreeBuilder.TEMPLATE)) {
+                            || stack[i].getGroup() == TreeBuilder.TEMPLATE || stack[i].getGroup() == TreeBuilder.DCE)) {
                 return i;
             }
         }
@@ -4005,7 +4195,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             if (stack[i].ns == "http://www.w3.org/1999/xhtml") {
                 if (stack[i].name == name) {
                     return i;
-                } else if (stack[i].name == "table" || stack[i].name == "template") {
+                } else if (stack[i].name == "table" || stack[i].name == "template" || stack[i].name == "custom-element") {
                     return TreeBuilder.NOT_FOUND_ON_STACK;
                 }
             }
@@ -4252,7 +4442,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             if (stack[i].ns == "http://www.w3.org/1999/xhtml") {
                 if ("td" == name || "th" == name) {
                     return i;
-                } else if (name == "table" || name == "template") {
+                } else if (name == "table" || name == "template" || name == "custom-element") {
                     return TreeBuilder.NOT_FOUND_ON_STACK;
                 }
             }
@@ -4264,7 +4454,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int eltGroup = stack[eltPos].getGroup();
         while (currentPtr > eltPos) { // > not >= intentional
             if (stack[currentPtr].ns == "http://www.w3.org/1999/xhtml"
-                    && stack[currentPtr].getGroup() == TEMPLATE
+                    && ( stack[currentPtr].getGroup() == TEMPLATE || stack[currentPtr].getGroup() == DCE )
                     && (eltGroup == TABLE || eltGroup == TBODY_OR_THEAD_OR_TFOOT|| eltGroup == TR || eltPos == 0)) {
                 return;
             }
@@ -4300,6 +4490,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         if ("template" == ancestor.name) {
                             break;
                         }
+                        if ("custom-element" == ancestor.name) {
+                            break;
+                        }
                         if ("table" == ancestor.name) {
                             mode = IN_SELECT_IN_TABLE;
                             return;
@@ -4332,6 +4525,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             } else if ("template" == name) {
                 assert templateModePtr >= 0;
                 mode = templateModeStack[templateModePtr];
+                return;
+            } else if ("custom-element" == name) {
+                assert dceModePtr >= 0;
+                mode = dceModeStack[dceModePtr];
                 return;
             }  else if ("head" == name) {
                 if (name == contextName) {
@@ -4398,6 +4595,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             templateModeStack = newStack;
         }
         templateModeStack[templateModePtr] = mode;
+    }
+
+    private void pushDceMode(int mode) {
+        dceModePtr++;
+        if (dceModePtr == dceModeStack.length) {
+            int[] newStack = new int[dceModeStack.length + 64];
+            System.arraycopy(dceModeStack, 0, newStack, 0, dceModeStack.length);
+            dceModeStack = newStack;
+        }
+        dceModeStack[dceModePtr] = mode;
     }
 
     @SuppressWarnings("unchecked") private void push(StackNode<T> node) throws SAXException {
@@ -5013,9 +5220,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     private void insertIntoFosterParent(T child) throws SAXException {
         int tablePos = findLastOrRoot(TreeBuilder.TABLE);
         int templatePos = findLastOrRoot(TreeBuilder.TEMPLATE);
+        int dcePos = findLastOrRoot(TreeBuilder.DCE);
+
+        // suns check case for dce>template
 
         if (templatePos >= tablePos) {
             appendElement(child, stack[templatePos].node);
+            return;
+        }
+        if (dcePos >= tablePos) {
+            appendElement(child, stack[dcePos].node);
             return;
         }
 
@@ -5038,12 +5252,22 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             ) throws SAXException {
         int tablePos = findLastOrRoot(TreeBuilder.TABLE);
         int templatePos = findLastOrRoot(TreeBuilder.TEMPLATE);
+        int dcePos = findLastOrRoot(TreeBuilder.DCE);
+
+        // suns dce>template case
 
         if (templatePos >= tablePos) {
             T child = createElement(ns, name, attributes, form, stack[templatePos].node
                     // CPPONLY: , creator
                     );
             appendElement(child, stack[templatePos].node);
+            return child;
+        }
+        if (dcePos >= tablePos) {
+            T child = createElement(ns, name, attributes, form, stack[dcePos].node
+                    // CPPONLY: , creator
+                    );
+            appendElement(child, stack[dcePos].node);
             return child;
         }
 
@@ -5064,6 +5288,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     private void popTemplateMode() {
         templateModePtr--;
+    }
+    private void popDceMode() {
+        dceModePtr--;
     }
 
     private void pop() throws SAXException {
@@ -5266,6 +5493,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         if (!isTemplateContents()) {
             formPointer = elt;
         }
+        if (!isDceContents()) {
+            formPointer = elt;
+        }
 
         StackNode<T> node = createStackNode(ElementName.FORM,
                 elt
@@ -5430,7 +5660,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     void setDocumentFragmentForTemplate(T template, T fragment) {
     }
-    void setDocumentFragmentForDce(T template, T fragment) {
+    void setDocumentFragmentForDce(T dce, T fragment) {
     }
 
     T getShadowRootFromHost(T host, T template, String shadowRootMode,
@@ -5494,7 +5724,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         // ]NOCPP]
         // Can't be called for custom elements
         T elt;
-        T formOwner = form == null || fragment || isTemplateContents() ? null : form;
+        T formOwner = form == null || fragment || isTemplateContents() || isDceContents() ? null : form;
         StackNode<T> current = stack[currentPtr];
         if (current.isFosterParenting()) {
             fatal();
@@ -5545,7 +5775,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         // ]NOCPP]
         // Can't be called for custom elements
         T elt;
-        T formOwner = form == null || fragment || isTemplateContents() ? null : form;
+        T formOwner = form == null || fragment || isTemplateContents() || isDceContents() ? null : form;
         StackNode<T> current = stack[currentPtr];
         if (current.isFosterParenting()) {
             fatal();
@@ -5657,7 +5887,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         // Can't be called for custom elements
         T currentNode = nodeFromStackWithBlinkCompat(currentPtr);
         T elt = createElement("http://www.w3.org/1999/xhtml", "input", attributes,
-                form == null || fragment || isTemplateContents() ? null : form, currentNode
+                form == null || fragment || isTemplateContents() || isDceContents() ? null : form, currentNode
                         // CPPONLY: , htmlCreator(NS_NewHTMLInputElement)
                         );
         appendElement(elt, currentNode);
@@ -5997,9 +6227,17 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
                 int tablePos = findLastOrRoot(TreeBuilder.TABLE);
                 int templatePos = findLastOrRoot(TreeBuilder.TEMPLATE);
+                int dcePos = findLastOrRoot(TreeBuilder.DCE);
+                //suns dce>template case
 
                 if (templatePos >= tablePos) {
                     appendCharacters(stack[templatePos].node, charBuffer, 0, charBufferLen);
+                    charBufferLen = 0;
+                    return;
+                }
+
+                if (dcePos >= tablePos) {
+                    appendCharacters(stack[dcePos].node, charBuffer, 0, charBufferLen);
                     charBufferLen = 0;
                     return;
                 }
@@ -6083,7 +6321,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int[] templateModeStackCopy = new int[templateModePtr + 1];
         System.arraycopy(templateModeStack, 0, templateModeStackCopy, 0,
                 templateModeStackCopy.length);
-        return new StateSnapshot<T>(stackCopy, listCopy, templateModeStackCopy, formPointer,
+        int[] dceModeStackCopy = new int[dceModePtr + 1];
+        System.arraycopy(dceModeStack, 0, dceModeStackCopy, 0,
+                dceModeStackCopy.length);
+        return new StateSnapshot<T>(stackCopy, listCopy, templateModeStackCopy, dceModeStackCopy, formPointer,
                 headPointer, mode, originalMode, framesetOk,
                 needToDropLF, quirks);
     }
@@ -6095,10 +6336,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int listLen = snapshot.getListOfActiveFormattingElementsLength();
         int[] templateModeStackCopy = snapshot.getTemplateModeStack();
         int templateModeStackLen = snapshot.getTemplateModeStackLength();
+        int[] dceModeStackCopy = snapshot.getDceModeStack();
+        int dceModeStackLen = snapshot.getDceModeStackLength();
 
         if (stackLen != currentPtr + 1
                 || listLen != listPtr + 1
                 || templateModeStackLen != templateModePtr + 1
+                || dceModeStackLen != dceModePtr + 1
                 || formPointer != snapshot.getFormPointer()
                 || headPointer != snapshot.getHeadPointer()
                 || mode != snapshot.getMode()
@@ -6131,6 +6375,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 return false;
             }
         }
+        for (int i = dceModeStackLen - 1; i >=0; i--) {
+            if (dceModeStackCopy[i] != dceModeStack[i]) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -6144,6 +6393,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int listLen = snapshot.getListOfActiveFormattingElementsLength();
         int[] templateModeStackCopy = snapshot.getTemplateModeStack();
         int templateModeStackLen = snapshot.getTemplateModeStackLength();
+       int[] dceModeStackCopy = snapshot.getDceModeStack();
+        int dceModeStackLen = snapshot.getDceModeStackLength();
 
         for (int i = 0; i <= listPtr; i++) {
             if (listOfActiveFormattingElements[i] != null) {
@@ -6167,6 +6418,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             templateModeStack = new int[templateModeStackLen];
         }
         templateModePtr = templateModeStackLen - 1;
+
+        if (dceModeStack.length < dceModeStackLen) {
+            dceModeStack = new int[dceModeStackLen];
+        }
+        dceModePtr = dceModeStackLen - 1;
 
         for (int i = 0; i < listLen; i++) {
             StackNode<T> node = listCopy[i];
@@ -6205,6 +6461,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             }
         }
         System.arraycopy(templateModeStackCopy, 0, templateModeStack, 0, templateModeStackLen);
+        System.arraycopy(dceModeStackCopy, 0, dceModeStack, 0, dceModeStackLen);
         formPointer = snapshot.getFormPointer();
         headPointer = snapshot.getHeadPointer();
         mode = snapshot.getMode();
@@ -6292,6 +6549,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     }
 
     /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStack()
+     */
+    @Override
+    public int[] getDceModeStack() {
+        return dceModeStack;
+    }
+
+    /**
      * Returns the mode.
      *
      * @return the mode
@@ -6363,6 +6628,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     @Override
     public int getTemplateModeStackLength() {
         return templateModePtr + 1;
+    }
+
+    /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStackLength()
+     */
+    @Override
+    public int getDceModeStackLength() {
+        return dceModePtr + 1;
     }
 
     /**

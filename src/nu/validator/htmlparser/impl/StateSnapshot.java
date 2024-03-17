@@ -1,22 +1,22 @@
 /*
  * Copyright (c) 2009-2010 Mozilla Foundation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a 
- * copy of this software and associated documentation files (the "Software"), 
- * to deal in the Software without restriction, including without limitation 
- * the rights to use, copy, modify, merge, publish, distribute, sublicense, 
- * and/or sell copies of the Software, and to permit persons to whom the 
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in 
+ * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
 
@@ -32,6 +32,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     private final @Auto StackNode<T>[] listOfActiveFormattingElements;
 
     private final @Auto int[] templateModeStack;
+    private final @Auto int[] dceModeStack;
 
     private final T formPointer;
 
@@ -40,7 +41,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     private final int mode;
 
     private final int originalMode;
-    
+
     private final boolean framesetOk;
 
     private final boolean needToDropLF;
@@ -51,6 +52,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * @param stack
      * @param listOfActiveFormattingElements
      * @param templateModeStack
+     * @param dceModeStack
      * @param formPointer
      * @param headPointer
      * @param deepTreeSurrogateParent
@@ -61,12 +63,13 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * @param quirks
      */
     StateSnapshot(StackNode<T>[] stack,
-            StackNode<T>[] listOfActiveFormattingElements, int[] templateModeStack, T formPointer,
+            StackNode<T>[] listOfActiveFormattingElements, int[] templateModeStack, int[] dceModeStack, T formPointer,
             T headPointer, int mode, int originalMode,
             boolean framesetOk, boolean needToDropLF, boolean quirks) {
         this.stack = stack;
         this.listOfActiveFormattingElements = listOfActiveFormattingElements;
         this.templateModeStack = templateModeStack;
+        this.dceModeStack = dceModeStack;
         this.formPointer = formPointer;
         this.headPointer = headPointer;
         this.mode = mode;
@@ -75,7 +78,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
         this.needToDropLF = needToDropLF;
         this.quirks = quirks;
     }
-    
+
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getStack()
      */
@@ -91,6 +94,12 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     public int[] getTemplateModeStack() {
         return templateModeStack;
     }
+
+    /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStack()
+     */
+    @Override
+    public int[] getDceModeStack() { return dceModeStack; }
 
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getListOfActiveFormattingElements()
@@ -110,7 +119,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the headPointer.
-     * 
+     *
      * @return the headPointer
      */
     @Override
@@ -120,7 +129,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the mode.
-     * 
+     *
      * @return the mode
      */
     @Override
@@ -130,7 +139,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the originalMode.
-     * 
+     *
      * @return the originalMode
      */
     @Override
@@ -140,7 +149,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the framesetOk.
-     * 
+     *
      * @return the framesetOk
      */
     @Override
@@ -150,7 +159,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the needToDropLF.
-     * 
+     *
      * @return the needToDropLF
      */
     @Override
@@ -160,14 +169,14 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     /**
      * Returns the quirks.
-     * 
+     *
      * @return the quirks
      */
     @Override
     public boolean isQuirks() {
         return quirks;
     }
-    
+
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getListOfActiveFormattingElementsLength()
      */
@@ -190,6 +199,14 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     @Override
     public int getTemplateModeStackLength() {
         return templateModeStack.length;
+    }
+
+    /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStackLength()
+     */
+    @Override
+    public int getDceModeStackLength() {
+        return dceModeStack.length;
     }
 
     @SuppressWarnings("unused") private void destructor() {
