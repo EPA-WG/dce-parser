@@ -5371,6 +5371,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 break;
                         }
                     }
+                } else if(attributes.getXmlnsLocalName(i).startsWith("xmlns:")) {
+                    // suns no error, just skipping for now.
                 } else {
                     err("Attribute \u201C" + attributes.getXmlnsLocalName(i)
                             + "\u201D not allowed here.");
