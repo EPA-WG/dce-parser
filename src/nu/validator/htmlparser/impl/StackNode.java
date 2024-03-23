@@ -237,6 +237,38 @@ final class StackNode<T> {
     }
 
     /**
+     * Setter for DCE elements. Note that the order of the arguments is
+     * what distinguishes this from the HTML setter. This is ugly, but
+     * AFAICT the least disruptive way to make this work with Java's generics
+     * and without unnecessary branches. :-(
+     *
+     * @param elementName
+     * @param popName
+     * @param node
+     */
+    void setValuesDCE(ElementName elementName, @Local String popName, T node
+            // [NOCPP[
+            , TaintableLocatorImpl locator
+            // ]NOCPP]
+    ) {
+        assert isUnused();
+        this.flags = prepareDceFlags(elementName.getFlags());
+        this.name = elementName.getName();
+        this.popName = popName;
+        this.ns = "http://www.w3.org/1999/XSL/Transform";
+        this.node = node;
+        this.attributes = null;
+        this.refcount = 1;
+        /*
+         * Not used for formatting elements, so no need to track creator.
+         */
+        // CPPONLY: this.htmlCreator = null;
+        // [NOCPP[
+        this.locator = locator;
+        // ]NOCPP]
+    }
+
+    /**
      * Setter for SVG elements. Note that the order of the arguments is
      * what distinguishes this from the HTML setter. This is ugly, but
      * AFAICT the least disruptive way to make this work with Java's generics
@@ -246,7 +278,7 @@ final class StackNode<T> {
      * @param popName
      * @param node
      */
-    void setValues(ElementName elementName, @Local String popName, T node
+    void setValuesSVG(ElementName elementName, @Local String popName, T node
             // [NOCPP[
             , TaintableLocatorImpl locator
             // ]NOCPP]
@@ -298,6 +330,15 @@ final class StackNode<T> {
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
+    }
+
+    private static int prepareDceFlags(int flags) {
+        flags &= ~(ElementName.FOSTER_PARENTING | ElementName.SCOPING
+                | ElementName.SPECIAL | ElementName.OPTIONAL_END_TAG);
+        if ((flags & ElementName.SCOPING_AS_DCE) != 0) {
+            flags |= (ElementName.SCOPING | ElementName.SPECIAL | ElementName.HTML_INTEGRATION_POINT);
+        }
+        return flags;
     }
 
     private static int prepareSvgFlags(int flags) {

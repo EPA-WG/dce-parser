@@ -202,6 +202,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     final static int DCE = 68;
 
+    final static int DCE_ATTR = 69;
+
     // start insertion modes
 
     private static final int IN_ROW = 0;
@@ -634,6 +636,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             // that ends stack popping. Instead, stack popping loops that are
             // meant not to pop the first element on the stack need to check
             // for currentPos becoming zero.
+            // suns DCE branch. createStackNode with DCE-specific signature to mimic SVG
             if (contextNamespace == "http://www.w3.org/2000/svg") {
                 ElementName elementName = ElementName.SVG;
                 if ("title" == contextName || "desc" == contextName
@@ -643,7 +646,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     elementName = ElementName.FOREIGNOBJECT;
                 }
                 // This is the SVG variant of the StackNode constructor.
-                StackNode<T> node = createStackNode(elementName,
+                StackNode<T> node = createStackNodeSVG(elementName,
                         elementName.getCamelCaseName(), elt
                         // [NOCPP[
                         , errorHandler == null ? null
@@ -686,7 +689,9 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 // The frameset-ok flag is set even though <frameset> never
                 // ends up being allowed as HTML frameset in the fragment case.
                 mode = FRAMESET_OK;
-            } else { // html
+            }
+            // suns DCE branch?
+            else { // html
                 StackNode<T> node = createStackNode(ElementName.HTML, elt
                 // [NOCPP[
                         , errorHandler == null ? null
@@ -1532,6 +1537,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             if (isInForeign()) {
                 StackNode<T> currentNode = stack[currentPtr];
                 @NsUri String currNs = currentNode.ns;
+                // suns DCE case
                 if (!(currentNode.isHtmlIntegrationPoint() || (currNs == "http://www.w3.org/1998/Math/MathML" && ((currentNode.getGroup() == MI_MO_MN_MS_MTEXT && group != MGLYPH_OR_MALIGNMARK) || (currentNode.getGroup() == ANNOTATION_XML && group == SVG))))) {
                     switch (group) {
                         case B_OR_BIG_OR_CODE_OR_EM_OR_I_OR_S_OR_SMALL_OR_STRIKE_OR_STRONG_OR_TT_OR_U:
@@ -1566,6 +1572,19 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             }
                             // CPPONLY: MOZ_FALLTHROUGH;
                         default:
+                            if ("http://www.w3.org/1999/XSL/Transform" == currNs) {
+                                attributes.adjustForDce();
+                                if (selfClosing) {
+                                    appendVoidElementToCurrentMayFosterDCE(
+                                            elementName, attributes);
+                                    selfClosing = false;
+                                } else {
+                                    appendToCurrentNodeAndPushElementMayFosterDCE(
+                                            elementName, attributes);
+                                }
+                                attributes = null; // CPP
+                                break starttagloop;
+                            } else
                             if ("http://www.w3.org/2000/svg" == currNs) {
                                 attributes.adjustForSvg();
                                 if (selfClosing) {
@@ -2055,9 +2074,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             case TEMPLATE:
                                 // Fall through to IN_HEAD
                                 break inbodyloop;
-                            case DCE:
-                                // Fall through to IN_HEAD
-                                break inbodyloop;
+//                            suns - DCE cloned from SVG handling bellow
+//                            case DCE:
+//                                // Fall through to IN_HEAD
+//                                break inbodyloop;
                             case BODY:
                                 if (currentPtr == 0 || stack[1].getGroup() != BODY || isTemplateContents() || isDceContents()) {
                                     assert fragment || isTemplateContents() || isDceContents();
@@ -2423,6 +2443,20 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                     selfClosing = false;
                                 } else {
                                     appendToCurrentNodeAndPushElementMayFosterSVG(
+                                            elementName, attributes);
+                                }
+                                attributes = null; // CPP
+                                break starttagloop;
+                            case DCE:
+                                reconstructTheActiveFormattingElements();
+                                attributes.adjustForDce();
+                                if (selfClosing) {
+                                    appendVoidElementToCurrentMayFosterDCE(
+                                            elementName,
+                                            attributes);
+                                    selfClosing = false;
+                                } else {
+                                    appendToCurrentNodeAndPushElementMayFosterDCE(
                                             elementName, attributes);
                                 }
                                 attributes = null; // CPP
@@ -5188,13 +5222,26 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         return instance;
     }
 
-    private StackNode<T> createStackNode(ElementName elementName, @Local String popName, T node
+    private StackNode<T> createStackNodeDCE(ElementName elementName, @Local String popName, T node
             // [NOCPP[
             , TaintableLocatorImpl locator
             // ]NOCPP]
     ) {
         StackNode<T> instance = getUnusedStackNode();
-        instance.setValues(elementName, popName, node
+        instance.setValuesDCE(elementName, popName, node
+                // [NOCPP[
+                , locator
+                // ]NOCPP]
+        );
+        return instance;
+    }
+    private StackNode<T> createStackNodeSVG(ElementName elementName, @Local String popName, T node
+            // [NOCPP[
+            , TaintableLocatorImpl locator
+            // ]NOCPP]
+    ) {
+        StackNode<T> instance = getUnusedStackNode();
+        instance.setValuesSVG(elementName, popName, node
                 // [NOCPP[
                 , locator
                 // ]NOCPP]
@@ -5710,7 +5757,40 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     );
             appendElement(elt, currentNode);
         }
-        StackNode<T> node = createStackNode(elementName, popName, elt
+        StackNode<T> node = createStackNodeSVG(elementName, popName, elt
+                // [NOCPP[
+                , errorHandler == null ? null : new TaintableLocatorImpl(tokenizer)
+        // ]NOCPP]
+        );
+        push(node);
+    }
+
+    private void appendToCurrentNodeAndPushElementMayFosterDCE(
+            ElementName elementName, HtmlAttributes attributes)
+            throws SAXException {
+        @Local String popName = elementName.getCamelCaseName();
+        // [NOCPP[
+        checkAttributes(attributes, "http://www.w3.org/1999/XSL/Transform");
+        if (!elementName.isInterned()) {
+            popName = checkPopName(popName);
+        }
+        // ]NOCPP]
+        T elt;
+        StackNode<T> current = stack[currentPtr];
+        if (current.isFosterParenting()) {
+            fatal();
+            elt = createAndInsertFosterParentedElement("http://www.w3.org/1999/XSL/Transform", popName, attributes
+                    // CPPONLY: , svgCreator(elementName.getSvgCreator())
+                    );
+        } else {
+            T currentNode = nodeFromStackWithBlinkCompat(currentPtr);
+            elt = createElement("http://www.w3.org/1999/XSL/Transform", popName, attributes, currentNode
+                    // CPPONLY: , svgCreator(elementName.getSvgCreator())
+                    );
+            appendElement(elt, currentNode);
+        }
+        // suns createStackNode signature is SVG-specific, replace with DCE one
+        StackNode<T> node = createStackNodeSVG(elementName, popName, elt
                 // [NOCPP[
                 , errorHandler == null ? null : new TaintableLocatorImpl(tokenizer)
         // ]NOCPP]
@@ -5852,6 +5932,33 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         }
         elementPushed("http://www.w3.org/2000/svg", popName, elt);
         elementPopped("http://www.w3.org/2000/svg", popName, elt);
+    }
+    private void appendVoidElementToCurrentMayFosterDCE(
+            ElementName elementName, HtmlAttributes attributes)
+            throws SAXException {
+        @Local String popName = elementName.getCamelCaseName();
+        // [NOCPP[
+        checkAttributes(attributes, "http://www.w3.org/1999/XSL/Transform");
+        if (!elementName.isInterned()) {
+            popName = checkPopName(popName);
+        }
+        // ]NOCPP]
+        T elt;
+        StackNode<T> current = stack[currentPtr];
+        if (current.isFosterParenting()) {
+            fatal();
+            elt = createAndInsertFosterParentedElement("http://www.w3.org/1999/XSL/Transform", popName, attributes
+                    // CPPONLY: , svgCreator(elementName.getSvgCreator())
+                    );
+        } else {
+            T currentNode = nodeFromStackWithBlinkCompat(currentPtr);
+            elt = createElement("http://www.w3.org/1999/XSL/Transform", popName, attributes, currentNode
+                    // CPPONLY: , svgCreator(elementName.getSvgCreator())
+                    );
+            appendElement(elt, currentNode);
+        }
+        elementPushed("http://www.w3.org/1999/XSL/Transform", popName, elt);
+        elementPopped("http://www.w3.org/1999/XSL/Transform", popName, elt);
     }
 
     private void appendVoidElementToCurrentMayFosterMathML(
@@ -6129,6 +6236,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         if (!((context == null && ns == null)
                 || "http://www.w3.org/1999/xhtml" == ns
                 || "http://www.w3.org/2000/svg" == ns || "http://www.w3.org/1998/Math/MathML" == ns)) {
+            // suns check DCE ns
             throw new IllegalArgumentException(
                     "The namespace must be the HTML, SVG or MathML namespace (or null when the local name is null). Got: "
                             + ns);

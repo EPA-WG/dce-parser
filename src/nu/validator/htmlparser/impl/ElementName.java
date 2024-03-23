@@ -55,6 +55,11 @@ public final class ElementName
     public static final int GROUP_MASK = 127;
 
     /**
+     * The element is scoping as DCE.
+     */
+    public static final int SCOPING_AS_DCE = (1 << 31);
+
+    /**
      * Indicates that the element is not a pre-interned element. Forbidden on
      * preinterned elements.
      */
@@ -380,6 +385,9 @@ public final class ElementName
 //        }
 //        if ((flags & SCOPING_AS_SVG) != 0) {
 //            buf.append(" | SCOPING_AS_SVG");
+//        }
+//        if ((flags & SCOPING_AS_DCE) != 0) {
+//            buf.append(" | SCOPING_AS_DCE");
 //        }
 //        if ((flags & OPTIONAL_END_TAG) != 0) {
 //            buf.append(" | OPTIONAL_END_TAG");
@@ -1000,11 +1008,11 @@ TreeBuilder.TEMPLATE | SPECIAL | SCOPING);
 public static final ElementName DCE = new ElementName("custom-element", "custom-element",
 // CPPONLY: NS_NewHTMLTemplateElement,
 // CPPONLY: NS_NewSVGUnknownElement,
-TreeBuilder.DCE | SPECIAL | SCOPING);
-public static final ElementName CUSTOM_ELEMENT = new ElementName("custom-element", "custom-element",
+TreeBuilder.DCE | SPECIAL | SCOPING | FOSTER_PARENTING);
+public static final ElementName DCE_ATTR = new ElementName("attribute", "attribute",
 // CPPONLY: NS_NewHTMLTemplateElement,
 // CPPONLY: NS_NewSVGUnknownElement,
-TreeBuilder.DCE | SPECIAL | SCOPING);
+TreeBuilder.DCE_ATTR | SPECIAL | SCOPING);
 public static final ElementName ALTGLYPHDEF = new ElementName("altglyphdef", "altGlyphDef",
 // CPPONLY: NS_NewHTMLUnknownElement,
 // CPPONLY: NS_NewSVGUnknownElement,
@@ -1575,6 +1583,8 @@ IMAGE,
 POLYLINE,
 STYLE,
 TEMPLATE,
+DCE,
+DCE_ATTR,
 FEFUNCG,
 STRONG,
 MATH,

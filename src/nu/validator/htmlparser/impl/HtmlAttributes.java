@@ -435,6 +435,10 @@ public final class HtmlAttributes implements Attributes {
         mode = AttributeName.SVG;
     }
 
+    public void adjustForDce() {
+        mode = AttributeName.DCE;
+    }
+
     public HtmlAttributes cloneAttributes() throws SAXException {
         assert (length == 0
                 && xmlnsLength == 0

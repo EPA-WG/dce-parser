@@ -74,7 +74,7 @@ public final class AttributeName
      * for the SVG and MathML modes.
      */
     private static final @NoLength @NsUri String[] XMLNS_NS = { "",
-            "http://www.w3.org/2000/xmlns/", "http://www.w3.org/2000/xmlns/",
+            "http://www.w3.org/2000/xmlns/", "http://www.w3.org/2000/xmlns/", "http://www.w3.org/1999/XSL/Transform",
             // [NOCPP[
             ""
     // ]NOCPP]
@@ -291,6 +291,10 @@ public final class AttributeName
     public static final int HTML_LANG = 3;
 
     // ]NOCPP]
+    /**
+     * The mode value for DCE.
+     */
+    public static final int DCE = 4;
 
     /**
      * The namespaces indexable by mode.
@@ -361,6 +365,7 @@ public final class AttributeName
         this.local[HTML_LANG] = htmlLang;
         // ]NOCPP]
         // CPPONLY: this.custom = false;
+        // suns XSL?
     }
 
     // CPPONLY: public AttributeName() {
