@@ -200,6 +200,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     final static int IMG = 67;
 
+    final static int DCE = 68;
+
     // start insertion modes
 
     private static final int IN_ROW = 0;
@@ -269,6 +271,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     private static final int TEXT = 21;
 
     private static final int IN_TEMPLATE = 22;
+
+    private static final int IN_DCE = 23;
 
     // start charset states
 
@@ -404,6 +408,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
      * Current template mode stack pointer.
      */
     private int templateModePtr = -1;
+
+    /**
+     * Stack of dce insertion modes
+     */
+    private @Auto int[] dceModeStack;
+
+    /**
+     * Current dce mode stack pointer.
+     */
+    private int dceModePtr = -1;
 
     private @Auto StackNode<T>[] stackNodes;
 
@@ -582,10 +596,12 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         stackNodes = new StackNode[64];
         stack = new StackNode[64];
         templateModeStack = new int[64];
+        dceModeStack = new int[64];
         listOfActiveFormattingElements = new StackNode[64];
         needToDropLF = false;
         originalMode = INITIAL;
         templateModePtr = -1;
+        dceModePtr = -1;
         stackNodesIdx = 0;
         numStackNodes = 0;
         currentPtr = -1;
@@ -1423,6 +1439,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         contextName = null;
         contextNode = null;
         templateModeStack = null;
+        dceModeStack = null;
         if (stack != null) {
             while (currentPtr > -1) {
                 stack[currentPtr].release(this);
@@ -2945,12 +2962,29 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         pushTemplateMode(IN_TEMPLATE);
     }
 
+    private void startTagDceInHead(ElementName elementName, HtmlAttributes attributes) throws SAXException {
+        appendToCurrentNodeAndPushElement(elementName, attributes);
+        insertMarker();
+        framesetOk = false;
+        originalMode = mode;
+        mode = IN_DCE;
+        pushDceMode(IN_DCE);
+    }
+
     private boolean isTemplateContents() {
         return TreeBuilder.NOT_FOUND_ON_STACK != findLast("template");
     }
 
+    private boolean isDceContents() {
+        return TreeBuilder.NOT_FOUND_ON_STACK != findLast("custom-element");
+    }
+
     private boolean isTemplateModeStackEmpty() {
         return templateModePtr == -1;
+    }
+
+    private boolean isDceModeStackEmpty() {
+        return dceModePtr == -1;
     }
 
     private boolean isSpecialParentInForeign(StackNode<T> stackNode) {
@@ -4398,6 +4432,16 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         templateModeStack[templateModePtr] = mode;
     }
 
+    private void pushDceMode(int mode) {
+        dceModePtr++;
+        if (dceModePtr == dceModeStack.length) {
+            int[] newStack = new int[dceModeStack.length + 64];
+            System.arraycopy(dceModeStack, 0, newStack, 0, dceModeStack.length);
+            dceModeStack = newStack;
+        }
+        dceModeStack[dceModePtr] = mode;
+    }
+
     @SuppressWarnings("unchecked") private void push(StackNode<T> node) throws SAXException {
         currentPtr++;
         if (currentPtr == stack.length) {
@@ -5142,6 +5186,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 break;
                         }
                     }
+                } else if(attributes.getXmlnsLocalName(i).startsWith("xmlns:")) {
+                    // suns no error, just skipping for now.
                 } else {
                     err("Attribute \u201C" + attributes.getXmlnsLocalName(i)
                             + "\u201D not allowed here.");
@@ -5415,8 +5461,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     T getDocumentFragmentForTemplate(T template) {
         return template;
     }
+    T getDocumentFragmentForDce(T dce) { return dce; }
 
     void setDocumentFragmentForTemplate(T template, T fragment) {
+    }
+    void setDocumentFragmentForDce(T dce, T fragment) {
     }
 
     T getShadowRootFromHost(T host, T template, String shadowRootMode,
@@ -6069,7 +6118,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int[] templateModeStackCopy = new int[templateModePtr + 1];
         System.arraycopy(templateModeStack, 0, templateModeStackCopy, 0,
                 templateModeStackCopy.length);
-        return new StateSnapshot<T>(stackCopy, listCopy, templateModeStackCopy, formPointer,
+        int[] dceModeStackCopy = new int[dceModePtr + 1];
+        System.arraycopy(dceModeStack, 0, dceModeStackCopy, 0,
+                dceModeStackCopy.length);
+        return new StateSnapshot<T>(stackCopy, listCopy, templateModeStackCopy, dceModeStackCopy, formPointer,
                 headPointer, mode, originalMode, framesetOk,
                 needToDropLF, quirks);
     }
@@ -6081,10 +6133,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int listLen = snapshot.getListOfActiveFormattingElementsLength();
         int[] templateModeStackCopy = snapshot.getTemplateModeStack();
         int templateModeStackLen = snapshot.getTemplateModeStackLength();
+        int[] dceModeStackCopy = snapshot.getDceModeStack();
+        int dceModeStackLen = snapshot.getDceModeStackLength();
 
         if (stackLen != currentPtr + 1
                 || listLen != listPtr + 1
                 || templateModeStackLen != templateModePtr + 1
+                || dceModeStackLen != dceModePtr + 1
                 || formPointer != snapshot.getFormPointer()
                 || headPointer != snapshot.getHeadPointer()
                 || mode != snapshot.getMode()
@@ -6117,6 +6172,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 return false;
             }
         }
+        for (int i = dceModeStackLen - 1; i >=0; i--) {
+            if (dceModeStackCopy[i] != dceModeStack[i]) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -6130,6 +6190,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         int listLen = snapshot.getListOfActiveFormattingElementsLength();
         int[] templateModeStackCopy = snapshot.getTemplateModeStack();
         int templateModeStackLen = snapshot.getTemplateModeStackLength();
+       int[] dceModeStackCopy = snapshot.getDceModeStack();
+        int dceModeStackLen = snapshot.getDceModeStackLength();
 
         for (int i = 0; i <= listPtr; i++) {
             if (listOfActiveFormattingElements[i] != null) {
@@ -6153,6 +6215,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             templateModeStack = new int[templateModeStackLen];
         }
         templateModePtr = templateModeStackLen - 1;
+
+        if (dceModeStack.length < dceModeStackLen) {
+            dceModeStack = new int[dceModeStackLen];
+        }
+        dceModePtr = dceModeStackLen - 1;
 
         for (int i = 0; i < listLen; i++) {
             StackNode<T> node = listCopy[i];
@@ -6191,6 +6258,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             }
         }
         System.arraycopy(templateModeStackCopy, 0, templateModeStack, 0, templateModeStackLen);
+        System.arraycopy(dceModeStackCopy, 0, dceModeStack, 0, dceModeStackLen);
         formPointer = snapshot.getFormPointer();
         headPointer = snapshot.getHeadPointer();
         mode = snapshot.getMode();
@@ -6278,6 +6346,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     }
 
     /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStack()
+     */
+    @Override
+    public int[] getDceModeStack() {
+        return dceModeStack;
+    }
+
+    /**
      * Returns the mode.
      *
      * @return the mode
@@ -6349,6 +6425,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     @Override
     public int getTemplateModeStackLength() {
         return templateModePtr + 1;
+    }
+
+    /**
+     * @see nu.validator.htmlparser.impl.TreeBuilderState#getDceModeStackLength()
+     */
+    @Override
+    public int getDceModeStackLength() {
+        return dceModePtr + 1;
     }
 
     /**

@@ -487,6 +487,10 @@ public final class HtmlAttributes implements Attributes {
             AttributeName attName = names[i];
             if (!attName.isNcName(mode)) {
                 String name = attName.getLocal(mode);
+                if(name.startsWith("xmlns:")) {
+                    // suns no error, just skipping for now.
+                    continue;
+                }
                 switch (namePolicy) {
                     case ALTER_INFOSET:
                         names[i] = AttributeName.create(NCName.escapeName(name));
